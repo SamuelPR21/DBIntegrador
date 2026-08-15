@@ -1,0 +1,18 @@
+services:
+  postgres:
+    build: .
+    container_name: SGP
+    environment:
+      POSTGRES_USER: dba
+      POSTGRES_PASSWORD: "Samuel,2005"
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./backup7_1_0.dump:/backup/backup7_1_0.dump:ro
+      - ./roles.sql:/scripts/roles.sql:ro
+    command: >
+      -c shared_preload_libraries=pg_cron
+      -c cron.database_name=dba
+volumes:
+  pgdata:
