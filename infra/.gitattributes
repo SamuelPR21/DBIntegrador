@@ -1,0 +1,6 @@
+# Los scripts se ejecutan dentro de un contenedor Linux: SIEMPRE con saltos de línea LF,
+# aunque se clone en Windows (si no, fallan con "\r: command not found").
+*.sh    text eol=lf
+*.sql   text eol=lf
+*.yml   text eol=lf
+.env*   text eol=lf

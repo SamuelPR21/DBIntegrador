@@ -1,0 +1,38 @@
+# =====================================================================
+# Base de datos LOCAL para QA
+# Restaura automáticamente el último backup de DEV de la carpeta backups/
+# del repo y le aplica los roles y permisos de QA (iguales a los de TEST).
+#
+# Primera vez / actualizar al último backup:
+#   docker compose down -v     (borra la base local)
+#   docker compose up -d       (crea el clúster + roles + restore + permisos QA)
+# =====================================================================
+services:
+  db:
+    image: postgres:18.0            # misma versión mayor que DEV
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Falta POSTGRES_PASSWORD en .env}
+      POSTGRES_DB: ${POSTGRES_DB:-pecuario}
+      QA_PASSWORD: ${QA_PASSWORD:?Falta QA_PASSWORD en .env}
+      APP_PASSWORD: ${APP_PASSWORD:?Falta APP_PASSWORD en .env}
+      # Patrón de los backups de DEV (se restaura el más reciente por nombre)
+      BACKUP_PATTERN: ${BACKUP_PATTERN:-backup_sgpmp_dev_*.dump}
+    volumes:
+      - pgdata:/var/lib/postgresql                  # ruta de datos de la imagen PG18
+      - ./initdb:/docker-entrypoint-initdb.d:ro     # 00 roles -> 10 restore -> 20 permisos QA
+      - ../backups:/backups:ro                      # backups de DEV (tu proceso de siempre)
+      - ./qa:/qa:ro                                 # roles_dev.sql + permisos_qa.sql
+    ports:
+      - "${DB_PORT:-5433}:5432"
+    healthcheck:
+      # Por TCP: durante la inicialización Postgres solo escucha por socket,
+      # así que el contenedor queda "healthy" SOLO cuando el restore terminó.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 300s
+
+volumes:
+  pgdata:

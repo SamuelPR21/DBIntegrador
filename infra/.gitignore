@@ -1,0 +1,8 @@
+# Secretos: nunca al repo
+.env
+.env.dba
+
+# Archivos a medio generar
+qa/*.tmp
+
+credenciales.txt
