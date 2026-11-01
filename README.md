@@ -1,99 +1,73 @@
-# SGP - Entorno de Base de Datos (PostgreSQL + Docker)
+# Restaurar la base de datos en local (QA)
 
-Guía para levantar la base de datos del proyecto en local usando Docker.
+Levanta en tu PC el último backup de **DEV** con los permisos de **QA**.
 
-## Requisitos previos
+## Estructura del repo
 
-- Tener [Docker Desktop](https://www.docker.com/products/docker-desktop/) instalado y corriendo.
-- Tener estos archivos en la misma carpeta:
-  - `dockerfile`
-  - `docker-compose.yml`
-  - `roles.sql`
-  - `backup7_1_0.dump`
+```
+repo/
+├── backups/            ← backups de DEV (se restaura el más reciente)
+└── infra/
+    ├── docker-compose.yml
+    ├── .env.example    ← plantilla de contraseñas
+    ├── initdb/         ← scripts que crean roles, restauran y dan permisos
+    ├── qa/             ← roles y permisos de QA
+    └── scripts/        ← solo para el DBA
+```
 
-> **Nota:** no subas `backup7_1_0.dump` ni las contraseñas reales al repositorio si el repo es público o tiene gente externa al equipo con acceso.
+## Requisitos
 
-## Paso 1: Levantar el contenedor
+- **Docker Desktop** instalado y **abierto** (debe decir *Engine running*).
+- **Git**.
+- Las contraseñas del `.env` (pídeselas al DBA).
 
-Desde la carpeta donde están los archivos, corre:
+## Restaurar
 
 ```bash
+git clone <url-del-repo>
+cd <repo>/infra
+cp .env.example .env      # llena las contraseñas
 docker compose up -d
 ```
 
-Esto va a:
-- Construir la imagen de Postgres (basada en `postgres:18` + extensión `pg_cron`).
-- Crear el contenedor `SGP`.
-- Crear el volumen `pgdata` (donde vive la data, persiste aunque apagues el contenedor).
-- Exponer el puerto `5433` en tu máquina (mapeado al `5432` interno).
-
-Verifica que el contenedor esté corriendo:
+Espera a que termine (puede tardar unos minutos):
 
 ```bash
-docker ps
+docker compose ps         # listo cuando STATUS diga "healthy"
 ```
 
-Deberías ver `SGP` en la lista con estado `Up`.
+## Conectarte
 
-## Paso 2: Restaurar los roles
+| Host | Puerto | Base | Usuario |
+|---|---|---|---|
+| `localhost` | **`5433`** | `pecuario` | `member_qa` |
 
-Este paso crea los roles/usuarios que necesita la base de datos (incluyendo el superusuario `dba` con su contraseña real, y los demás roles de la app).
+Antes de consultar, indica la granja (RLS):
+
+```sql
+SET app.current_granja_id = 1;
+```
+
+> En pgAdmin registra un servidor nuevo con el puerto **5433** (el 5432 es otro Postgres).
+
+## Actualizar al último backup
 
 ```bash
-docker exec -i SGP psql -U dba -d dba -f /scripts/roles.sql
+git pull
+docker compose down -v    # borra tu base local
+docker compose up -d
 ```
 
-Si todo sale bien, no deberías ver errores en la salida (algunos `NOTICE` son normales, los `ERROR` no).
+Para apagar y prender sin perder datos: `docker compose stop` / `docker compose start`.
 
-## Paso 3: Restaurar el backup
-
-Este paso restaura el dump completo de la base de datos (tablas, datos, funciones, etc.) sobre los roles ya creados.
+## Si falla
 
 ```bash
-docker exec -i SGPMP pg_restore -U dba -d dba --no-owner --role=dba /backup/backup7_1_0.dump
+docker compose logs db
 ```
 
-- `--no-owner`: evita que intente asignar propietarios originales del dump que podrían no coincidir con tus roles locales.
-- `--role=dba`: fuerza que los objetos restaurados queden bajo el rol `dba`.
+Corrige el problema y vuelve a empezar desde cero:
 
-> Es normal ver algunos warnings de objetos que ya existen o de extensiones — mientras no se corte el proceso con un `ERROR` fatal, está bien.
-
-## Paso 4: Conectarte a la base de datos
-
-Usa cualquier cliente (DBeaver, pgAdmin, TablePlus, extensión de Postgres en VSCode, etc.) con estos datos de conexión:
-
-| Parámetro | Valor |
-|---|---|
-| Host | `localhost` |
-| Puerto | `5433` |
-| Base de datos | `dba` |
-| Usuario | `dba` |
-| Contraseña | *(te la paso yo personalmente, no va en este README)* |
-
-## Comandos útiles
-
-Apagar el contenedor (sin perder los datos, quedan en el volumen `pgdata`):
 ```bash
-docker compose down
+docker compose down -v && docker compose up -d
 ```
-
-Apagar y **borrar todo** (incluyendo la data, para empezar de cero):
-```bash
-docker compose down -v
-```
-
-Ver logs del contenedor en vivo:
-```bash
-docker logs -f SGPMP
-```
-
-Entrar a una consola `psql` dentro del contenedor:
-```bash
-docker exec -it SGPMP psql -U dba -d dba
-```
-
-## Si algo sale mal
-
-- Si `docker compose up -d` falla, revisa que el puerto `5433` no esté ocupado por otro proceso en tu máquina.
-- Si necesitas repetir el proceso desde cero (por ejemplo, si el restore falló a la mitad), corre `docker compose down -v` y vuelve a empezar desde el Paso 1.
-- Cualquier error raro, mándame el log completo (`docker logs SGPMP`) antes de intentar arreglarlo por tu cuenta.
